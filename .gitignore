@@ -1,0 +1,14 @@
+# render output, caches, scenes
+out/
+__pycache__/
+*.pyc
+*.blend
+*.blend1
+
+# audio binaries are fetched with tools/fetch_audio.ps1 (licences: assets/audio/CREDITS.md)
+assets/audio/music/
+assets/audio/sfx/
+
+# reference images that came with the prompt (not ours to license) and the local post package
+docs/ref/
+post/

@@ -1,0 +1,93 @@
+Blender 5.2.3 API notes for this project (verified by introspection on this machine)
+====================================================================================
+* Engine id: 'BLENDER_EEVEE' (EEVEE Next). Cycles exists but is NOT used (too slow on this laptop).
+* 'Fac' sockets were renamed to 'Factor' (Noise/Brick/Wave/Gradient/Attribute/Fresnel outputs, MixShader/ColorRamp inputs).
+* ShaderNodeMix: inputs 0=Factor(float) 2/3=A/B float, 4/5=A/B vector, 6/7=A/B color; outputs 0 float, 1 vector, 2 color.
+* Materials/worlds: 'use_nodes' is deprecated but harmless; node tree always exists.
+* Material EEVEE settings: surface_render_method ('DITHERED' | 'BLENDED'), use_transparent_shadow, use_backface_culling,
+  displacement_method, volume_intersection_method, use_raytrace_refraction.
+* Compositor: scene.compositing_node_group = bpy.data.node_groups.new(name, 'CompositorNodeTree'); final image goes to a
+  NodeGroupOutput (interface socket of type NodeSocketColor), there is NO Composite node and NO scene.node_tree.
+  CompositorNodeMixRGB / SunBeams / MapValue no longer exist (use ShaderNodeMix, Glare 'Sun Beams' type, ShaderNodeMapRange).
+* Sky texture types: SINGLE_SCATTERING, MULTIPLE_SCATTERING, PREETHAM, HOSEK_WILKIE (no 'NISHITA').
+* View transform 'AgX', looks are named 'AgX - Punchy', 'AgX - Medium High Contrast', ...
+* Light: use_shadow, shadow_soft_size, use_custom_distance/cutoff_distance, shadow_maximum_resolution, use_shadow_jitter.
+  IMPORTANT: many shadow-casting point lights overflow the EEVEE shadow pool and made a test render take 200 s and
+  10 GB RAM. Only the sun (and at most a handful of hero lights) may cast shadows: set light.use_shadow = False.
+* EEVEE speed on this machine (Radeon 780M): ~4-6 s per 1080p frame for a 2.5M-triangle scene with raytracing,
+  +1.5 s with volumetrics. Keep shaders reasonably lean (noise Detail <= 6 where possible).
+
+Raw socket listing
+------------------
+NODE ShaderNodeTexNoise | IN: ['Vector', 'W', 'Scale', 'Detail', 'Roughness', 'Lacunarity', 'Offset', 'Gain', 'Distortion'] | OUT: ['Factor', 'Color']
+NODE ShaderNodeTexBrick | IN: ['Vector', 'Color1', 'Color2', 'Mortar', 'Scale', 'Mortar Size', 'Mortar Smooth', 'Bias', 'Brick Width', 'Row Height'] | OUT: ['Color', 'Factor']
+NODE ShaderNodeTexVoronoi | IN: ['Vector', 'W', 'Scale', 'Detail', 'Roughness', 'Lacunarity', 'Smoothness', 'Exponent', 'Randomness'] | OUT: ['Distance', 'Color', 'Position', 'W', 'Radius']
+NODE ShaderNodeTexWave | IN: ['Vector', 'Scale', 'Distortion', 'Detail', 'Detail Scale', 'Detail Roughness', 'Phase Offset'] | OUT: ['Color', 'Factor']
+NODE ShaderNodeTexGradient | IN: ['Vector'] | OUT: ['Color', 'Factor']
+NODE ShaderNodeMixShader | IN: ['Factor', 'Shader', 'Shader'] | OUT: ['Shader']
+NODE ShaderNodeMix | IN: ['Factor', 'Factor', 'A', 'B', 'A', 'B', 'A', 'B', 'A', 'B'] | OUT: ['Result', 'Result', 'Result', 'Result']
+NODE ShaderNodeAttribute | IN: [] | OUT: ['Color', 'Vector', 'Factor', 'Alpha']
+NODE ShaderNodeFresnel | IN: ['IOR', 'Normal'] | OUT: ['Factor']
+NODE ShaderNodeLayerWeight | IN: ['Blend', 'Normal'] | OUT: ['Fresnel', 'Facing']
+NODE ShaderNodeBsdfPrincipled | IN: ['Base Color', 'Metallic', 'Roughness', 'IOR', 'Alpha', 'Thin Wall', 'Normal', 'Weight', 'Diffuse Roughness', 'Subsurface Weight', 'Subsurface Radius', 'Subsurface Scale', 'Subsurface IOR', 'Subsurface Anisotropy', 'Specular IOR Level', 'Specular Tint', 'Anisotropic', 'Anisotropic Rotation', 'Tangent', 'Transmission Weight', 'Coat Weight', 'Coat Roughness', 'Coat IOR', 'Coat Tint', 'Coat Normal', 'Sheen Weight', 'Sheen Roughness', 'Sheen Tint', 'Emission Color', 'Emission Strength', 'Thin Film Thickness', 'Thin Film IOR'] | OUT: ['BSDF']
+NODE ShaderNodeBump | IN: ['Strength', 'Distance', 'Filter Width', 'Height', 'Normal'] | OUT: ['Normal']
+NODE ShaderNodeValToRGB | IN: ['Factor'] | OUT: ['Color', 'Alpha']
+NODE ShaderNodeMapRange | IN: ['Value', 'From Min', 'From Max', 'To Min', 'To Max', 'Steps', 'Vector', 'From Min', 'From Max', 'To Min', 'To Max', 'Steps'] | OUT: ['Result', 'Vector']
+NODE ShaderNodeSeparateColor | IN: ['Color'] | OUT: ['Red', 'Green', 'Blue']
+NODE ShaderNodeEmission | IN: ['Color', 'Strength', 'Weight'] | OUT: ['Emission']
+NODE ShaderNodeBsdfGlossy | IN: ['Color', 'Roughness', 'Anisotropy', 'Rotation', 'Normal', 'Tangent', 'Weight'] | OUT: ['BSDF']
+NODE ShaderNodeBsdfTransparent | IN: ['Color', 'Weight'] | OUT: ['BSDF']
+NODE ShaderNodeVolumePrincipled | IN: ['Color', 'Color Attribute', 'Density', 'Density Attribute', 'Anisotropy', 'Absorption Color', 'Emission Strength', 'Emission Color', 'Blackbody Intensity', 'Blackbody Tint', 'Temperature', 'Temperature Attribute', 'Weight'] | OUT: ['Volume']
+NODE ShaderNodeTexSky | IN: ['Vector'] | OUT: ['Color']
+NODE ShaderNodeNewGeometry | IN: [] | OUT: ['Position', 'Normal', 'Tangent', 'True Normal', 'Incoming', 'Parametric', 'Backfacing', 'Pointiness', 'Random Per Island']
+NODE ShaderNodeTexCoord | IN: [] | OUT: ['Generated', 'Normal', 'UV', 'Object', 'Camera', 'Window', 'Reflection']
+NODE ShaderNodeMapping | IN: ['Vector', 'Location', 'Rotation', 'Scale'] | OUT: ['Vector']
+NODE ShaderNodeLightPath | IN: [] | OUT: ['Is Camera Ray', 'Is Shadow Ray', 'Is Diffuse Ray', 'Is Glossy Ray', 'Is Singular Ray', 'Is Reflection Ray', 'Is Transmission Ray', 'Is Volume Scatter Ray', 'Ray Length', 'Ray Depth', 'Diffuse Depth', 'Glossy Depth', 'Transparent Depth', 'Transmission Depth', 'Portal Depth']
+NODE ShaderNodeObjectInfo | IN: [] | OUT: ['Location', 'Color', 'Alpha', 'Object Index', 'Material Index', 'Random']
+NODE ShaderNodeCameraData | IN: [] | OUT: ['View Vector', 'View Z Depth', 'View Distance']
+NODE ShaderNodeTexWhiteNoise | IN: ['Vector', 'W'] | OUT: ['Value', 'Color']
+NODE ShaderNodeVolumeScatter | IN: ['Color', 'Density', 'Anisotropy', 'IOR', 'Backscatter', 'Alpha', 'Diameter', 'Weight'] | OUT: ['Volume']
+NODE ShaderNodeBsdfTranslucent | IN: ['Color', 'Normal', 'Weight'] | OUT: ['BSDF']
+NODE ShaderNodeHueSaturation | IN: ['Hue', 'Saturation', 'Value', 'Factor', 'Color'] | OUT: ['Color']
+NODE ShaderNodeVectorMath | IN: ['Vector', 'Vector', 'Vector', 'Scale'] | OUT: ['Vector', 'Value']
+NODE ShaderNodeDisplacement | IN: ['Height', 'Midlevel', 'Scale', 'Normal'] | OUT: ['Displacement']
+NODE ShaderNodeBsdfRefraction | IN: ['Color', 'Roughness', 'IOR', 'Normal', 'Weight'] | OUT: ['BSDF']
+NODE ShaderNodeBackground | IN: ['Color', 'Strength', 'Weight'] | OUT: ['Background']
+noise attrs ['texture_mapping', 'color_mapping', 'noise_dimensions', 'noise_type', 'normalize']
+sky attrs ['texture_mapping', 'color_mapping', 'sky_type', 'sun_disc', 'sun_size', 'sun_intensity', 'sun_elevation', 'sun_rotation', 'altitude', 'air_density', 'aerosol_density', 'ozone_density', 'sun_direction', 'turbidity', 'ground_albedo']
+mat props ['name', 'use_fake_user', 'use_extra_user', 'is_runtime_data', 'tag', 'asset_data', 'surface_render_method', 'displacement_method', 'blend_method', 'alpha_threshold', 'use_transparency_overlap', 'show_transparent_back', 'use_backface_culling', 'use_backface_culling_shadow', 'use_backface_culling_lightprobe_volume', 'use_transparent_shadow', 'use_raytrace_refraction', 'use_screen_refraction', 'use_sss_translucency', 'refraction_depth', 'thickness_mode', 'use_thickness_from_shadow', 'volume_intersection_method', 'max_vertex_displacement', 'preview_render_type', 'use_preview_world', 'pass_index', 'use_nodes', 'paint_active_slot', 'paint_clone_slot', 'diffuse_color', 'specular_color', 'roughness', 'specular_intensity', 'metallic', 'line_color', 'line_priority']
+light props ['name', 'use_fake_user', 'use_extra_user', 'is_runtime_data', 'tag', 'asset_data', 'type', 'use_temperature', 'color', 'temperature', 'specular_factor', 'diffuse_factor', 'transmission_factor', 'volume_factor', 'use_custom_distance', 'cutoff_distance', 'use_shadow', 'exposure', 'normalize', 'use_nodes', 'use_soft_falloff', 'energy', 'shadow_buffer_clip_start', 'shadow_soft_size', 'shadow_filter_radius', 'shadow_maximum_resolution', 'use_shadow_jitter', 'shadow_jitter_overblur', 'use_absolute_resolution']
+rt opts ['rna_type', 'resolution_scale', 'use_backface_hit', 'backface_radiance_scale', 'use_denoise', 'denoise_spatial', 'denoise_temporal', 'denoise_bilateral', 'screen_trace_thickness', 'trace_max_roughness', 'screen_trace_quality']
+looks ['NONE']
+vt ok AgX
+look ok AgX - Medium High Contrast
+look fail Medium High Contrast
+look ok AgX - Punchy
+look fail Punchy
+CNODE CompositorNodeRLayers | IN: [] | OUT: ['Image', 'Alpha']
+CNODE CompositorNodeGlare | IN: ['Image', 'Type', 'Quality', 'Threshold', 'Smoothness', 'Clamp', 'Maximum', 'Strength', 'Saturation', 'Tint', 'Size', 'Streaks', 'Streaks Angle', 'Iterations', 'Fade', 'Color Modulation', 'Diagonal', 'Sun Position', 'Jitter', 'Kernel Data Type', 'Kernel', 'Kernel'] | OUT: ['Image', 'Glare', 'Highlights']
+CNODE CompositorNodeLensdist | IN: ['Image', 'Type', 'Distortion', 'Dispersion', 'Jitter', 'Fit'] | OUT: ['Image']
+CNODE CompositorNodeEllipseMask | IN: ['Operation', 'Mask', 'Value', 'Position', 'Size', 'Rotation'] | OUT: ['Mask']
+CNODE CompositorNodeBlur | IN: ['Image', 'Size', 'Type', 'Extend Bounds', 'Separable'] | OUT: ['Image']
+CNODE CompositorNodeColorBalance | IN: ['Image', 'Factor', 'Type', 'Lift', 'Lift', 'Gamma', 'Gamma', 'Gain', 'Gain', 'Offset', 'Offset', 'Power', 'Power', 'Slope', 'Slope', 'Temperature', 'Tint', 'Temperature', 'Tint'] | OUT: ['Image']
+CNODE CompositorNodeCurveRGB | IN: ['Image', 'Factor', 'Black Level', 'White Level'] | OUT: ['Image']
+CNODE CompositorNodeMixRGB ERR Error: Node type CompositorNodeMixRGB undefined
+CNODE ShaderNodeMix | IN: ['Factor', 'Factor', 'A', 'B', 'A', 'B', 'A', 'B', 'A', 'B'] | OUT: ['Result', 'Result', 'Result', 'Result']
+CNODE CompositorNodeSunBeams ERR Error: Node type CompositorNodeSunBeams undefined
+CNODE CompositorNodeMapValue ERR Error: Node type CompositorNodeMapValue undefined
+CNODE ShaderNodeMapRange | IN: ['Value', 'From Min', 'From Max', 'To Min', 'To Max', 'Steps', 'Vector', 'From Min', 'From Max', 'To Min', 'To Max', 'Steps'] | OUT: ['Result', 'Vector']
+CNODE NodeGroupOutput | IN: [''] | OUT: []
+CNODE CompositorNodeViewer | IN: ['Image'] | OUT: []
+CNODE CompositorNodeHueSat | IN: ['Image', 'Hue', 'Saturation', 'Value', 'Factor'] | OUT: ['Image']
+CNODE CompositorNodeExposure | IN: ['Image', 'Exposure'] | OUT: ['Image']
+CNODE CompositorNodeTonemap | IN: ['Image', 'Type', 'Key', 'Balance', 'Gamma', 'Intensity', 'Contrast', 'Light Adaptation', 'Chromatic Adaptation'] | OUT: ['Image']
+CNODE CompositorNodeBrightContrast | IN: ['Image', 'Brightness', 'Contrast'] | OUT: ['Image']
+CNODE CompositorNodeColorCorrection | IN: ['Image', 'Mask', 'Saturation', 'Contrast', 'Gamma', 'Gain', 'Offset', 'Saturation', 'Contrast', 'Gamma', 'Gain', 'Offset', 'Saturation', 'Contrast', 'Gamma', 'Gain', 'Offset', 'Saturation', 'Contrast', 'Gamma', 'Gain', 'Offset', 'Midtones Start', 'Midtones End', 'Red', 'Green', 'Blue'] | OUT: ['Image']
+CNODE CompositorNodeFilter | IN: ['Image', 'Factor', 'Type'] | OUT: ['Image']
+CNODE CompositorNodeDefocus | IN: ['Image', 'Z'] | OUT: ['Image']
+CNODE CompositorNodeVecBlur | IN: ['Image', 'Speed', 'Depth', 'Samples', 'Shutter'] | OUT: ['Image']
+CNODE CompositorNodeKuwahara | IN: ['Image', 'Size', 'Type', 'Uniformity', 'Sharpness', 'Eccentricity', 'High Precision'] | OUT: ['Image']
+CNODE CompositorNodeImageCoordinates | IN: ['Image'] | OUT: ['Uniform', 'Normalized', 'Pixel']
+CNODE CompositorNodeDenoise | IN: ['Image', 'Albedo', 'Normal', 'HDR', 'Prefilter', 'Quality'] | OUT: ['Image']
+CNODE ShaderNodeTexNoise | IN: ['Vector', 'W', 'Scale', 'Detail', 'Roughness', 'Lacunarity', 'Offset', 'Gain', 'Distortion'] | OUT: ['Factor', 'Color']
+CNODE ShaderNodeMath | IN: ['Value', 'Value', 'Value'] | OUT: ['Value']
